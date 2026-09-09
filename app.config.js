@@ -25,6 +25,7 @@ module.exports = {
       bundleIdentifier: "com.tuusuario.mealplanner",
       infoPlist: {
         NSPhotoLibraryUsageDescription: "Necesitamos acceso a tus fotos para poner imágenes en tus recetas.",
+        NSCameraUsageDescription: "Necesitamos acceso a la cámara para fotografiar y escanear recetas.",
       },
     },
     android: {
@@ -33,7 +34,7 @@ module.exports = {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#FFF7ED",
       },
-      permissions: ["READ_EXTERNAL_STORAGE"],
+      permissions: ["READ_EXTERNAL_STORAGE", "CAMERA"],
       softwareKeyboardLayoutMode: "resize",
     },
     web: {

@@ -13,6 +13,10 @@ grupo con un código compartido.
 
 - **Pestaña Recetas**: crea, edita y elimina recetas, con foto (opcional),
   ingredientes, pasos y categoría (Comida, Cena o ambas). Buscador incluido.
+- **Escanear receta desde una foto**: al crear/editar una receta, un botón
+  rellena ingredientes y pasos automáticamente a partir de una foto (cámara
+  en móvil, subir imagen en web) usando OCR. Requiere configurar una clave
+  gratuita, ver [OCR_SETUP.md](./OCR_SETUP.md).
 - **Pestaña Menú**: navega mes a mes (desde hoy en adelante) y elige, para
   cada día, qué receta toca de comida y cuál de cena. Al elegir, solo se
   muestran recetas de esa categoría, con buscador también.
@@ -28,6 +32,10 @@ Esta versión necesita una base de datos en la nube para poder compartir
 datos entre dispositivos. Sigue la guía **[FIREBASE_SETUP.md](./FIREBASE_SETUP.md)**
 paso a paso (lleva unos 10 minutos, es gratis) antes de continuar. Sin eso,
 la app no podrá conectar y verás un aviso de error al abrirla.
+
+El escaneo de recetas (OCR) es opcional: sin configurarlo, todo lo demás
+funciona igual, simplemente el botón de escanear avisará de que falta la
+clave. Ver [OCR_SETUP.md](./OCR_SETUP.md) si quieres activarlo.
 
 ## 1. Requisitos previos
 
@@ -115,8 +123,10 @@ visitaste).
 meal-planner/
 ├── App.js                          # Punto de entrada
 ├── FIREBASE_SETUP.md               # Guía de configuración de Firebase
+├── OCR_SETUP.md                    # Guía de configuración del escaneo de recetas
 ├── src/
 │   ├── firebase/config.js          # Claves de conexión a tu proyecto Firebase
+│   ├── config/ocrConfig.js         # Clave de OCR.space para escanear recetas
 │   ├── context/
 │   │   ├── HouseholdContext.js     # Grupo familiar: crear/unirse/miembros
 │   │   └── DataContext.js          # Recetas y menú (Firestore, en tiempo real)
@@ -125,7 +135,7 @@ meal-planner/
 │   │   ├── JoinHouseholdScreen.js  # Pantalla de bienvenida (crear/unirse)
 │   │   ├── GroupScreen.js          # Código, miembros, salir del grupo
 │   │   ├── RecipesListScreen.js    # Lista de recetas + buscador
-│   │   ├── RecipeFormScreen.js     # Crear/editar receta (foto + pasos)
+│   │   ├── RecipeFormScreen.js     # Crear/editar receta (foto + pasos + escaneo)
 │   │   ├── RecipeDetailScreen.js   # Ver receta completa
 │   │   ├── MonthlyMenuScreen.js    # Calendario mensual
 │   │   └── DayMenuScreen.js        # Elegir receta para un día/comida
@@ -135,7 +145,11 @@ meal-planner/
 │   └── utils/
 │       ├── dateUtils.js            # Cálculo de días del mes
 │       ├── textUtils.js            # Búsqueda sin tildes/mayúsculas
-│       └── householdCode.js        # Generar/normalizar código de grupo
+│       ├── householdCode.js        # Generar/normalizar código de grupo
+│       ├── alert.js                # Alert.alert que también funciona en web
+│       ├── share.js                # Share.share con fallback en web
+│       ├── ocr.js                  # Llama a OCR.space y extrae el texto de la foto
+│       └── recipeParser.js         # Reparte el texto en ingredientes/pasos
 ```
 
 ## 6. Ideas para ampliarla más adelante

@@ -14,6 +14,8 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import { useData } from "../context/DataContext";
 import { alert } from "../utils/alert";
+import { extractTextFromImage, isOcrConfigured } from "../utils/ocr";
+import { parseRecipeText } from "../utils/recipeParser";
 
 export default function RecipeFormScreen({ navigation, route }) {
   const { recipeId } = route.params || {};
@@ -27,6 +29,7 @@ export default function RecipeFormScreen({ navigation, route }) {
     existing?.steps?.length ? existing.steps : [""]
   );
   const [saving, setSaving] = useState(false);
+  const [scanning, setScanning] = useState(false);
   // Si la receta no tiene categorías guardadas (recetas creadas antes de
   // esta función), la marcamos como válida para ambas por defecto.
   const [categories, setCategories] = useState(
@@ -75,6 +78,74 @@ export default function RecipeFormScreen({ navigation, route }) {
     if (!result.canceled && result.assets?.length) {
       setImage(result.assets[0].uri);
     }
+  }
+
+  // En móvil abre la cámara (para fotografiar una receta en papel o un
+  // libro); en web no hay cámara disponible de forma fiable, así que abre
+  // el selector de archivos para subir una captura de pantalla o foto.
+  async function pickScanImage() {
+    if (Platform.OS === "web") {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 1,
+      });
+      return !result.canceled && result.assets?.length ? result.assets[0] : null;
+    }
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      alert("Permiso necesario", "Necesitamos acceso a la cámara para escanear la receta.");
+      return null;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 1,
+    });
+    return !result.canceled && result.assets?.length ? result.assets[0] : null;
+  }
+
+  async function runScan(asset) {
+    setScanning(true);
+    try {
+      const text = await extractTextFromImage(asset.uri);
+      const parsed = parseRecipeText(text);
+      setIngredients(parsed.ingredients);
+      setSteps(parsed.steps.length ? parsed.steps : [""]);
+      alert(
+        "Receta escaneada",
+        "Revisa los ingredientes y los pasos: el reconocimiento automático puede tener fallos."
+      );
+    } catch (e) {
+      console.warn("Error escaneando receta", e);
+      alert(
+        "No se pudo escanear",
+        "Prueba con una foto más clara y con buena luz, o rellena los campos a mano."
+      );
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  async function scanRecipe() {
+    if (!isOcrConfigured) {
+      alert(
+        "Función no configurada",
+        "Para escanear recetas hace falta configurar una clave gratuita de OCR.space (ver OCR_SETUP.md)."
+      );
+      return;
+    }
+    const asset = await pickScanImage();
+    if (!asset) return;
+
+    const hasContent = ingredients.trim() || steps.some((s) => s.trim());
+    if (hasContent) {
+      alert(
+        "Reemplazar contenido",
+        "Ya tienes ingredientes o pasos escritos. ¿Quieres reemplazarlos con lo que se detecte en la foto?",
+        [{ text: "Cancelar", style: "cancel" }, { text: "Reemplazar", onPress: () => runScan(asset) }]
+      );
+      return;
+    }
+    runScan(asset);
   }
 
   function updateStep(index, text) {
@@ -230,6 +301,21 @@ export default function RecipeFormScreen({ navigation, route }) {
         </View>
         <Text style={styles.categoryHint}>Puedes marcar las dos si sirve para cualquier momento.</Text>
 
+        <TouchableOpacity style={styles.scanBtn} onPress={scanRecipe} disabled={scanning}>
+          {scanning ? (
+            <ActivityIndicator color="#C2410C" />
+          ) : (
+            <Text style={styles.scanBtnText}>
+              {Platform.OS === "web"
+                ? "📄 Escanear receta desde una imagen"
+                : "📷 Escanear receta con la cámara"}
+            </Text>
+          )}
+        </TouchableOpacity>
+        <Text style={styles.scanHint}>
+          Rellena ingredientes y pasos automáticamente a partir de una foto de la receta.
+        </Text>
+
         <Text style={styles.label}>Ingredientes (opcional)</Text>
         <View onLayout={registerFieldPosition("ingredients")}>
           <TextInput
@@ -317,6 +403,18 @@ const styles = StyleSheet.create({
   categoryChipText: { fontSize: 14, fontWeight: "600", color: "#6B7280" },
   categoryChipTextActive: { color: "#fff" },
   categoryHint: { fontSize: 12, color: "#9CA3AF", marginTop: 6 },
+  scanBtn: {
+    backgroundColor: "#FEF3E7",
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: "#FB923C",
+    borderStyle: "dashed",
+    paddingVertical: 12,
+    alignItems: "center",
+    marginTop: 16,
+  },
+  scanBtnText: { color: "#C2410C", fontWeight: "700", fontSize: 14 },
+  scanHint: { fontSize: 12, color: "#9CA3AF", marginTop: 6, marginBottom: 10 },
   input: {
     backgroundColor: "#fff",
     borderRadius: 10,
