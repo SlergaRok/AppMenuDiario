@@ -1,14 +1,49 @@
 import React, { useState } from "react";
-import { View, Text, FlatList, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
 import { useData } from "../context/DataContext";
-import { nombreMes, nombreDiaCorto, dateKey } from "../utils/dateUtils";
+import { nombreMes, nombreDiaCorto, dateKey, getWeekKeys } from "../utils/dateUtils";
+import { alert } from "../utils/alert";
+
+const MEAL_TYPES = ["comida", "cena"];
+
+// Baraja una copia del array (Fisher-Yates), sin tocar el original.
+function shuffle(array) {
+  const copy = [...array];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+// Genera `count` ids de receta para rellenar huecos: recorre el conjunto de
+// recetas disponible en orden aleatorio antes de repetir ninguna, y solo
+// vuelve a repetir si hacen falta más huecos que recetas distintas hay.
+function buildMealSequence(recipeIds, count) {
+  if (recipeIds.length === 0) return [];
+  const sequence = [];
+  let bag = [];
+  let lastId = null;
+  while (sequence.length < count) {
+    if (bag.length === 0) {
+      bag = shuffle(recipeIds);
+      if (bag[0] === lastId && bag.length > 1) {
+        [bag[0], bag[1]] = [bag[1], bag[0]];
+      }
+    }
+    lastId = bag.shift();
+    sequence.push(lastId);
+  }
+  return sequence;
+}
 
 export default function MonthlyMenuScreen({ navigation }) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [monthIndex, setMonthIndex] = useState(today.getMonth());
+  const [generating, setGenerating] = useState(false);
 
-  const { menu, getRecipe } = useData();
+  const { recipes, menu, getRecipe, setMealForDay } = useData();
   const totalDays = new Date(year, monthIndex + 1, 0).getDate();
   const allDays = Array.from({ length: totalDays }, (_, i) => i + 1);
 
@@ -58,6 +93,81 @@ export default function MonthlyMenuScreen({ navigation }) {
   const isToday = (day) =>
     day === today.getDate() && monthIndex === today.getMonth() && year === today.getFullYear();
 
+  // Rellena automáticamente los próximos 7 días (a partir del primer día
+  // visible) sin tocar las comidas/cenas que ya estuvieran elegidas.
+  function handleAutoFillWeek() {
+    const startDay = days[0];
+    if (!startDay) return;
+    const weekKeys = getWeekKeys(year, monthIndex, startDay);
+
+    const pools = {
+      comida: recipes.filter((r) => !r.categories?.length || r.categories.includes("comida")),
+      cena: recipes.filter((r) => !r.categories?.length || r.categories.includes("cena")),
+    };
+
+    const emptySlots = { comida: [], cena: [] };
+    weekKeys.forEach((key) => {
+      MEAL_TYPES.forEach((mealType) => {
+        if (!menu[key]?.[mealType]) emptySlots[mealType].push(key);
+      });
+    });
+
+    const totalEmpty = emptySlots.comida.length + emptySlots.cena.length;
+    if (totalEmpty === 0) {
+      alert(
+        "Semana completa",
+        "Ya tienes elegida una comida y una cena para cada uno de los próximos 7 días."
+      );
+      return;
+    }
+    if (pools.comida.length === 0 && pools.cena.length === 0) {
+      alert("Sin recetas", "Añade alguna receta antes de generar el menú automáticamente.");
+      return;
+    }
+
+    alert(
+      "Generar menú de la semana",
+      "Se elegirá una receta al azar para cada comida y cena vacía de los próximos 7 días, sin repetir mientras tengas recetas suficientes. Lo que ya tengas elegido no se tocará.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Generar", onPress: () => runAutoFillWeek(emptySlots, pools) },
+      ]
+    );
+  }
+
+  async function runAutoFillWeek(emptySlots, pools) {
+    setGenerating(true);
+    try {
+      const writes = [];
+      MEAL_TYPES.forEach((mealType) => {
+        const slots = emptySlots[mealType];
+        const sequence = buildMealSequence(
+          pools[mealType].map((r) => r.id),
+          slots.length
+        );
+        slots.forEach((key, i) => {
+          if (sequence[i]) writes.push(setMealForDay(key, mealType, sequence[i]));
+        });
+      });
+      await Promise.all(writes);
+
+      const missing = MEAL_TYPES.filter(
+        (mealType) => pools[mealType].length === 0 && emptySlots[mealType].length > 0
+      );
+      if (missing.length > 0) {
+        const label = missing.map((m) => (m === "comida" ? "comidas" : "cenas")).join(" ni las ");
+        alert(
+          "Menú generado",
+          `No se pudieron rellenar las ${label} porque no tienes recetas marcadas para esa categoría.`
+        );
+      }
+    } catch (e) {
+      alert("Algo falló", "No se pudo generar el menú. Inténtalo de nuevo.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.monthHeader}>
@@ -77,6 +187,18 @@ export default function MonthlyMenuScreen({ navigation }) {
           <Text style={styles.monthArrowText}>›</Text>
         </TouchableOpacity>
       </View>
+
+      <TouchableOpacity
+        style={[styles.autoFillBtn, (generating || recipes.length === 0) && styles.autoFillBtnDisabled]}
+        onPress={handleAutoFillWeek}
+        disabled={generating || recipes.length === 0}
+      >
+        {generating ? (
+          <ActivityIndicator color="#fff" size="small" />
+        ) : (
+          <Text style={styles.autoFillBtnText}>🎲 Generar menú de la semana</Text>
+        )}
+      </TouchableOpacity>
 
       <FlatList
         data={days}
@@ -138,6 +260,16 @@ const styles = StyleSheet.create({
   monthArrowText: { fontSize: 26, color: "#FB923C", fontWeight: "700" },
   monthArrowDisabled: { color: "#F3D9BE" },
   monthTitle: { fontSize: 18, fontWeight: "700", color: "#1F2937", minWidth: 160, textAlign: "center" },
+  autoFillBtn: {
+    backgroundColor: "#FB923C",
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  autoFillBtnDisabled: { backgroundColor: "#F3D9BE" },
+  autoFillBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
   dayCard: {
     backgroundColor: "#fff",
     borderRadius: 14,

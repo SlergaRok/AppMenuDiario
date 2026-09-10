@@ -41,3 +41,14 @@ export function nombreDiaCorto(year, monthIndex, day) {
   const date = new Date(year, monthIndex, day);
   return DIAS_SEMANA[date.getDay() === 0 ? 6 : date.getDay() - 1];
 }
+
+// Devuelve las claves ("YYYY-MM-DD") de varios días consecutivos a partir
+// del indicado, cruzando de mes o de año si hace falta.
+export function getWeekKeys(year, monthIndex, day, length = 7) {
+  const start = new Date(year, monthIndex, day);
+  return Array.from({ length }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    return dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+  });
+}
